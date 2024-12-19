@@ -1,0 +1,4 @@
+*.log
+*.tmp
+*.mat
+/__pycache__/
