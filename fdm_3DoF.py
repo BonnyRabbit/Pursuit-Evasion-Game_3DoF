@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from load_mdl import ModelLoader
+from saturation import saturation
 from utils import interp, clamp, DCM
 from aero import AeroForceCalculator
 from prop import PropulsionCalculator
@@ -60,18 +61,13 @@ class fdm_3Dof():
         """
         Action
         """
-        # [nx, nn, thr]
-        self.n_x = None
-        self.n_n = None
+        # [ny, nz, thr]
+        self.n_y = None
+        self.n_z = None
         self.thr = None
         """
         Saturation
         """
-
-        # rl-params
-        self.done = False
-        # self.observation_space = spaces.Box(low=None, high=None, shape=None)
-        # self.action_space = spaces.Box(low=None, high=None, shape=None)
 
         # Inititalize aero_cal
         self.aero_force = AeroForceCalculator(
@@ -107,13 +103,10 @@ class fdm_3Dof():
         R = 287.05
         T = temp - 0.0065 * self.alt
         c = math.sqrt(gamma * R * T)
-        ma = self.tas / c
+        self.mach = self.tas / c
 
-        return ma
+        return self.mach
 
-    def saturation():
-        pass
-    
     def DCM_gk(self):
         Ly_gamma = DCM('y',self.gamma)
         Lz_chi = DCM('z', self.chi)
@@ -129,7 +122,12 @@ class fdm_3Dof():
         return L_ka
     
     def take_action(self, action):
-        pass
+        # Actions saturation
+        action_dim = action.shape()
+        min_val, max_val = saturation(action[i])
+        for i in range(action_dim):
+            action[i] = clamp(action[i], min_val, max_val) # TODO
+
 
 #     # Example usage
 # fdm = fdm_3Dof()
