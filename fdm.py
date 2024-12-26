@@ -1,13 +1,11 @@
 import numpy as np
 import math
 from load_mdl import ModelLoader
-from saturation import saturation
-from utils import interp, clamp, DCM
+from utils import scale, DCM
 from aero import AeroForceCalculator
 from prop import PropulsionCalculator
-from gym import spaces
 
-class fdm_3Dof():
+class fdm_3DoF():
     
     def __init__(self):
 
@@ -25,7 +23,7 @@ class fdm_3Dof():
         """
         Params
         """
-        self.dt_AP = 0.005
+        self.dt_AP = 1
         self.mass = 200
         self.g = 9.8
         self.RefArea = self.data_aero['RefArea']
@@ -34,9 +32,9 @@ class fdm_3Dof():
         """
         State
         """
-        # [x, y, z, x_t, y_t, z_t, tas, alpha, beta, gamma, chi, chi_t, mu]
+        # [x, y, z, x_t, y_t, z_t, v, alpha, beta, gamma, chi, chi_t, mu]
         # speed
-        self.tas = None
+        self.v = None
         self.mach = None
         # position
         self.x = None
@@ -61,9 +59,10 @@ class fdm_3Dof():
         """
         Action
         """
-        # [ny, nz, thr]
-        self.n_y = None
-        self.n_z = None
+        # [ay, az, thr]
+        self.action_type = ['alpha', 'beta', 'thr']
+        self.a_y = None
+        self.a_z = None
         self.thr = None
         """
         Saturation
@@ -85,12 +84,26 @@ class fdm_3Dof():
  
     def cal_aero_force(self):
         D, L, Y = self.aero_force.cal_aero_force(
-            alpha=self.alpha, beta=self.beta, mach=self.mach, tas=self.tas, alt=self.alt, RefArea=self.RefArea
+            alpha=self.alpha,
+            beta=self.beta,
+            mach=self.mach,
+            v=self.v,
+            alt=self.alt,
+            RefArea=self.RefArea
         )
+        D = D.item() if isinstance(D, np.ndarray) else D
+        L = L.item() if isinstance(L, np.ndarray) else L
+        Y = Y.item() if isinstance(Y, np.ndarray) else Y
+
         return D, L, Y
 
     def cal_prop_force(self):
-        Thrust = self.prop_force.cal_prop(self.mach, self.alt, self.thr)
+        Thrust = self.prop_force.cal_prop(
+            mach=self.mach,
+            alt=self.alt,
+            thr=self.thr
+        )
+        Thrust = Thrust.item() if isinstance(Thrust, np.ndarray) else Thrust
         return Thrust
 
     def cal_mass(self):
@@ -103,17 +116,16 @@ class fdm_3Dof():
         R = 287.05
         T = temp - 0.0065 * self.alt
         c = math.sqrt(gamma * R * T)
-        self.mach = self.tas / c
+        self.mach = self.v / c
 
         return self.mach
 
-    def DCM_gk(self):
+    def DCM_kg(self):
         Ly_gamma = DCM('y',self.gamma)
         Lz_chi = DCM('z', self.chi)
         L_kg = Ly_gamma @ Lz_chi
-        L_gk = np.linalg.inv(L_kg)
 
-        return L_gk
+        return L_kg
     
     def DCM_ka(self):
         Lx_mu = DCM('x', self.mu)
@@ -121,12 +133,65 @@ class fdm_3Dof():
 
         return L_ka
     
+    def DCM_ab(self):
+        Ly_alpha = DCM('y', -self.alpha)
+        Lz_beta = DCM('z', self.beta)
+        L_ab = Lz_beta @ Ly_alpha
+
+        return L_ab
+    
     def take_action(self, action):
-        # Actions saturation
-        action_dim = action.shape()
-        min_val, max_val = saturation(action[i])
-        for i in range(action_dim):
-            action[i] = clamp(action[i], min_val, max_val) # TODO
+        # Update state
+        alpha = self.alpha
+        beta = self.beta
+        mach = self.cal_mach()
+        v = self.v
+        alt = self.alt
+        thr = self.thr
+        mass = self.mass
+        x = self.x
+        y = self.y
+        z = self.z
+        gamma = self.gamma
+        mu = self.mu
+        chi = self.chi
+
+        # Actions scale
+        delta_alpha, delta_beta, delta_thr = [scale(i, type) for i, type in zip(action, self.action_type)]
+
+
+        self.alpha = alpha + math.radians(delta_alpha) * self.dt_AP
+        self.beta = beta + math.radians(delta_beta) * self.dt_AP
+        self.thr = thr + delta_thr * self.dt_AP
+
+        D, L, Y = self.cal_aero_force()
+        T = self.cal_prop_force()
+        
+        """
+        6th Order Point Mass Flight Model in Kinetic axis
+        m * (Vx_dot + Vz*wy - Vy*wz) = Fx
+        m * (Vy_dot + Vx*wz - Vz*wx) = Fy
+        m * (Vz_dot + Vy*wx - Vx*wy) = Fz
+        """
+        L_kg = self.DCM_kg()
+        L_ka = self.DCM_ka()
+        L_ab = self.DCM_ab()
+        L_gk = np.linalg.inv(L_kg)
+        L_kb = L_ka @ L_ab
+        v_g = L_gk @ np.array([[v], [0], [0]])
+        dx, dy, dz = v_g.flatten()
+        F = (L_kb @ np.array([[T], [0], [0]])
+                        + L_ka @ np.array([[-D], [Y], [-L]])
+                        + L_kg @ np.array([[0], [0], [mass * self.g]]))
+        omega = (L_kg @ np.array([[0], [0], [chi]]) + np.array([[0], [gamma], [0]])).flatten()
+        v_dot, gamma_dot, chi_dot = F / (mass * omega)
+        
+        self.x = x + dx * self.dt_AP
+        self.y = y + dy * self.dt_AP
+        self.z = z + dz * self.dt_AP
+        self.v = v + v_dot * self.dt_AP
+        self.gamma = gamma + gamma_dot * self.dt_AP
+        self.chi = chi + chi_dot * self.dt_AP
 
 
 #     # Example usage
@@ -142,7 +207,7 @@ class fdm_3Dof():
 # fdm.alpha = 5.0
 # fdm.beta = 0
 # fdm.mach = 0.8
-# fdm.tas = 250  # m/s
+# fdm.v = 250  # m/s
 # fdm.alt = 1000  # meters
 
 # D, L, Y = fdm.cal_aero_force()

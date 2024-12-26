@@ -1,5 +1,6 @@
 from scipy.interpolate import RegularGridInterpolator
 import numpy as np
+from saturation import limit
 
 # 插值表
 def interp(mat, var, grid_axes, method='linear'):
@@ -59,3 +60,12 @@ def DCM(axis, angle_deg):
         ])
 
     return    L   
+
+
+def scale(action, action_type):
+    action = np.array(action, dtype=float)
+    # 得到物理范围
+    min_val, max_val = limit(action_type)
+    scaled_val = ((action + 1) / 2) * (max_val - min_val) + min_val
+
+    return scaled_val

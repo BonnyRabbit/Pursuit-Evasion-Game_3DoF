@@ -42,11 +42,11 @@ class AeroForceCalculator:
         rho = P / (R * temp)
         return rho
     
-    def cal_aero_force(self, alpha, beta, mach, tas, alt, RefArea):
+    def cal_aero_force(self, alpha, beta, mach, v, alt, RefArea):
         self.alpha = alpha
         self.beta = beta
         self.mach = mach
-        self.tas = tas
+        self.v = v
         self.alt = alt
         self.RefArea = RefArea
         """Calculate aerodynamic forces (drag, lift, and side force)."""
@@ -54,8 +54,8 @@ class AeroForceCalculator:
         rho = self._cal_rho()  # Calculate air density
         
         # Calculate aerodynamic forces
-        D = 0.5 * rho * self.tas**2 * self.RefArea * CD  # Drag force
-        L = 0.5 * rho * self.tas**2 * self.RefArea * CL  # Lift force
-        Y = 0.5 * rho * self.tas**2 * self.RefArea * CY  # Side force
+        D = 0.5 * rho * self.v**2 * self.RefArea * CD  # Drag force
+        L = 0.5 * rho * self.v**2 * self.RefArea * CL  # Lift force
+        Y = 0.5 * rho * self.v**2 * self.RefArea * CY  # Side force
         
         return D, L, Y
