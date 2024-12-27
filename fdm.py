@@ -157,8 +157,8 @@ class fdm_3DoF():
         chi = self.chi
 
         # Actions scale
-        delta_alpha, delta_beta, delta_thr = [scale(i, type) for i, type in zip(action, self.action_type)]
-
+        # delta_alpha, delta_beta, delta_thr = [scale(i, type) for i, type in zip(action, self.action_type)]
+        delta_alpha, delta_beta, delta_thr = action
 
         self.alpha = alpha + math.radians(delta_alpha) * self.dt_AP
         self.beta = beta + math.radians(delta_beta) * self.dt_AP
@@ -172,6 +172,14 @@ class fdm_3DoF():
         m * (Vx_dot + Vz*wy - Vy*wz) = Fx
         m * (Vy_dot + Vx*wz - Vz*wx) = Fy
         m * (Vz_dot + Vy*wx - Vx*wy) = Fz
+
+        In matrix form:
+        [-Vy Vz 0]  [wx]    1  [Fx - m*Vx_dot]
+        [-Vz 0 Vx]  [wy] = --- [Fy - m*Vy_dot]
+        [0 -Vx Vy]  [wz]    m  [Fz - m*Vz_dot]
+
+        let A = left b = right
+        Aw = b -> w = A^-1 * b
         """
         L_kg = self.DCM_kg()
         L_ka = self.DCM_ka()
@@ -183,8 +191,11 @@ class fdm_3DoF():
         F = (L_kb @ np.array([[T], [0], [0]])
                         + L_ka @ np.array([[-D], [Y], [-L]])
                         + L_kg @ np.array([[0], [0], [mass * self.g]]))
-        omega = (L_kg @ np.array([[0], [0], [chi]]) + np.array([[0], [gamma], [0]])).flatten()
-        v_dot, gamma_dot, chi_dot = F / (mass * omega)
+        Fx, Fy, Fz = F.flatten()
+        v_dot = Fx / mass
+        gamma_dot = - Fz / (mass * v)
+        wz = Fy  / (mass * v)
+        chi_dot = wz / math.cos(self.gamma)
         
         self.x = x + dx * self.dt_AP
         self.y = y + dy * self.dt_AP

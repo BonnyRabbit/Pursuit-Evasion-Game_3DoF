@@ -27,17 +27,17 @@ def test_take_action():
     print(f"绕速度滚转角: {np.rad2deg(model.mu)}°")
     print(f"油门: {model.thr}")
 
-    action = [-0.9, 0, -0.9]
+    action = [0.5, 0, 0.1]
 
     model.take_action(action)
 
     print("第二拍状态:")
-    print(f"位置: ({model.x}, {model.y}, {model.z})")
+    print(f"位置: ({model.x}, {model.y}, {-model.z})")
     print(f"速度: {model.v} m/s")
     print(f"攻角: {np.rad2deg(model.alpha)}°")
     print(f"侧滑角: {np.rad2deg(model.beta)}°")
     print(f"偏航角: {np.rad2deg(model.chi)}°")
-    print(f"航迹倾角: {np.rad2deg(model.chi)}°")
+    print(f"航迹倾角: {np.rad2deg(model.gamma)}°")
     print(f"绕速度滚转角: {np.rad2deg(model.mu)}°")
     print(f"油门: {model.thr}")
 
