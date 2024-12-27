@@ -5,221 +5,164 @@ from utils import scale, DCM
 from aero import AeroForceCalculator
 from prop import PropulsionCalculator
 
-class fdm_3DoF():
-    
+class Fdm3DoF:
     def __init__(self):
-
-        # Iniialize model
+        # 初始化模型
         self.model_loader = ModelLoader()
         model_data = self.model_loader.load_mdl()
-        # Pre-process data
+        # 预处理数据
         self.data_aero = model_data['data_aero']
         self.data_prop = model_data['data_prop']
         self.var_aero = model_data['var_aero']
         self.grid_axes_aero = model_data['grid_axes_aero']
         self.var_prop = model_data['var_prop']
         self.grid_axes_prop = model_data['grid_axes_prop']
-
-        """
-        Params
-        """
-        self.dt_AP = 1
+        # 固定参数
+        self.dt_AP = 0.05
         self.mass = 200
         self.g = 9.8
         self.RefArea = self.data_aero['RefArea']
         self.RefLen = self.data_aero['RefLen']
         self.RefSpan = self.data_aero['RefSpan']
-        """
-        State
-        """
-        # [x, y, z, x_t, y_t, z_t, v, alpha, beta, gamma, chi, chi_t, mu]
-        # speed
-        self.v = None
-        self.mach = None
-        # position
-        self.x = None
-        self.y = None
-        self.z = None
-        self.x_t = None
-        self.y_t = None
-        self.z_t = None
-        self.alt = None
-        # attitude angle
-        self.phi = None
-        self.tht = None
-        self.psi = None
-        # aero angle
-        self.alpha = None
-        self.beta = None
-        # track angle
-        self.gamma = None
-        self.chi = None
-        self.chi_t = None
-        self.mu = None
-        """
-        Action
-        """
-        # [ay, az, thr]
-        self.action_type = ['alpha', 'beta', 'thr']
-        self.a_y = None
-        self.a_z = None
-        self.thr = None
-        """
-        Saturation
-        """
 
-        # Inititalize aero_cal
+        # 初始化气动、发动机力计算方法
         self.aero_force = AeroForceCalculator(
             data_aero=self.data_aero,
             var_aero=self.var_aero,
             grid_axes_aero=self.grid_axes_aero,
         )
-        # Initialize prop_cal
         self.prop_force = PropulsionCalculator(
             data_prop=self.data_prop,
             var_prop=self.var_prop,
             grid_axes_prop=self.grid_axes_prop
-        )     
-        
- 
-    def cal_aero_force(self):
+        )
+
+    def calculate_mach(self, v, alt):
+        temp = 273.15
+        gamma = 1.4
+        R = 287.05
+        T = temp - 0.0065 * alt
+        c = math.sqrt(gamma * R * T)
+        mach = v / c
+        return mach
+
+    def calculate_aero_force(self, alpha, beta, mach, v, alt):
         D, L, Y = self.aero_force.cal_aero_force(
-            alpha=self.alpha,
-            beta=self.beta,
-            mach=self.mach,
-            v=self.v,
-            alt=self.alt,
+            alpha=alpha,
+            beta=beta,
+            mach=mach,
+            v=v,
+            alt=alt,
             RefArea=self.RefArea
         )
         D = D.item() if isinstance(D, np.ndarray) else D
         L = L.item() if isinstance(L, np.ndarray) else L
         Y = Y.item() if isinstance(Y, np.ndarray) else Y
-
         return D, L, Y
 
-    def cal_prop_force(self):
+    def calculate_prop_force(self, mach, alt, thr):
         Thrust = self.prop_force.cal_prop(
-            mach=self.mach,
-            alt=self.alt,
-            thr=self.thr
+            mach=mach,
+            alt=alt,
+            thr=thr
         )
         Thrust = Thrust.item() if isinstance(Thrust, np.ndarray) else Thrust
         return Thrust
 
-    def cal_mass(self):
-        pass
-    
-    
-    def cal_mach(self):
-        temp= 273.15
-        gamma = 1.4
-        R = 287.05
-        T = temp - 0.0065 * self.alt
-        c = math.sqrt(gamma * R * T)
-        self.mach = self.v / c
-
-        return self.mach
-
-    def DCM_kg(self):
-        Ly_gamma = DCM('y',self.gamma)
-        Lz_chi = DCM('z', self.chi)
+    def calculate_dcm(self, gamma, chi, alpha, beta, mu):
+        # 计算方向余弦矩阵
+        Ly_gamma = DCM('y', gamma)
+        Lz_chi = DCM('z', chi)
         L_kg = Ly_gamma @ Lz_chi
 
-        return L_kg
-    
-    def DCM_ka(self):
-        Lx_mu = DCM('x', self.mu)
+        Lx_mu = DCM('x', mu)
         L_ka = np.linalg.inv(Lx_mu)
 
-        return L_ka
-    
-    def DCM_ab(self):
-        Ly_alpha = DCM('y', -self.alpha)
-        Lz_beta = DCM('z', self.beta)
+        Ly_alpha = DCM('y', -alpha)
+        Lz_beta = DCM('z', beta)
         L_ab = Lz_beta @ Ly_alpha
 
-        return L_ab
-    
-    def take_action(self, action):
-        # Update state
-        alpha = self.alpha
-        beta = self.beta
-        mach = self.cal_mach()
-        v = self.v
-        alt = self.alt
-        thr = self.thr
-        mass = self.mass
-        x = self.x
-        y = self.y
-        z = self.z
-        gamma = self.gamma
-        mu = self.mu
-        chi = self.chi
-
-        # Actions scale
-        # delta_alpha, delta_beta, delta_thr = [scale(i, type) for i, type in zip(action, self.action_type)]
-        delta_alpha, delta_beta, delta_thr = action
-
-        self.alpha = alpha + math.radians(delta_alpha) * self.dt_AP
-        self.beta = beta + math.radians(delta_beta) * self.dt_AP
-        self.thr = thr + delta_thr * self.dt_AP
-
-        D, L, Y = self.cal_aero_force()
-        T = self.cal_prop_force()
-        
-        """
-        6th Order Point Mass Flight Model in Kinetic axis
-        m * (Vx_dot + Vz*wy - Vy*wz) = Fx
-        m * (Vy_dot + Vx*wz - Vz*wx) = Fy
-        m * (Vz_dot + Vy*wx - Vx*wy) = Fz
-
-        In matrix form:
-        [-Vy Vz 0]  [wx]    1  [Fx - m*Vx_dot]
-        [-Vz 0 Vx]  [wy] = --- [Fy - m*Vy_dot]
-        [0 -Vx Vy]  [wz]    m  [Fz - m*Vz_dot]
-
-        let A = left b = right
-        Aw = b -> w = A^-1 * b
-        """
-        L_kg = self.DCM_kg()
-        L_ka = self.DCM_ka()
-        L_ab = self.DCM_ab()
         L_gk = np.linalg.inv(L_kg)
         L_kb = L_ka @ L_ab
+
+        return L_ka, L_gk, L_kb, L_kg
+
+    def run(self, state, action):
+        """
+        更新状态的方法
+        :param state: 当前状态的字典
+        :param action: 动作的字典
+        :return: 更新后的状态字典
+        """
+        # 提取当前状态
+        x, y, z = state['x'], state['y'], state['z']
+        x_t, y_t, z_t = state['x_t'], state['y_t'], state['z_t']
+        v, alpha, beta, gamma, chi, chi_t, mu = state['v'], state['alpha'], state['beta'], state['gamma'], state['chi'], state['chi_t'], state['mu']
+        thr = state['thr']
+        mass = self.mass
+        alt = -z  # 假设 z 是向下为正
+
+        # 提取动作
+        delta_alpha, delta_beta, delta_thr = action  # 假设动作已经缩放
+
+        # 更新控制输入
+        alpha += math.radians(delta_alpha) * self.dt_AP
+        beta += math.radians(delta_beta) * self.dt_AP
+        thr += delta_thr * self.dt_AP
+
+        # 计算马赫数
+        mach = self.calculate_mach(v, alt)
+
+        # 计算气动力
+        D, L, Y = self.calculate_aero_force(alpha, beta, mach, v, alt)
+        # 计算推进力
+        T = self.calculate_prop_force(mach, alt, thr)
+
+        # 计算方向余弦矩阵
+        L_ka, L_gk, L_kb, L_kg = self.calculate_dcm(gamma, chi, alpha, beta, mu)
+
+        # 速度向量在惯性系中的表示
         v_g = L_gk @ np.array([[v], [0], [0]])
         dx, dy, dz = v_g.flatten()
+
+        # 计算航迹轴下F
         F = (L_kb @ np.array([[T], [0], [0]])
-                        + L_ka @ np.array([[-D], [Y], [-L]])
-                        + L_kg @ np.array([[0], [0], [mass * self.g]]))
+             + L_ka @ np.array([[-D], [Y], [-L]])
+             + L_kg @ np.array([[0], [0], [mass * self.g]]))
         Fx, Fy, Fz = F.flatten()
+
+        # 计算加速度和角速度
         v_dot = Fx / mass
-        gamma_dot = - Fz / (mass * v)
-        wz = Fy  / (mass * v)
-        chi_dot = wz / math.cos(self.gamma)
-        
-        self.x = x + dx * self.dt_AP
-        self.y = y + dy * self.dt_AP
-        self.z = z + dz * self.dt_AP
-        self.v = v + v_dot * self.dt_AP
-        self.gamma = gamma + gamma_dot * self.dt_AP
-        self.chi = chi + chi_dot * self.dt_AP
+        gamma_dot = -Fz / (mass * v)
+        wz = Fy / (mass * v)
+        chi_dot = wz / math.cos(gamma) if math.cos(gamma) != 0 else 0
+
+        # 更新状态
+        x += dx * self.dt_AP
+        y += dy * self.dt_AP
+        z += dz * self.dt_AP
+        v += v_dot * self.dt_AP
+        gamma += gamma_dot * self.dt_AP
+        chi += chi_dot * self.dt_AP
 
 
-#     # Example usage
-# fdm = fdm_3Dof()
-# fdm.mach = 0.8
-# fdm.alt = 1000  # meters
-# fdm.thr = 0.75  # throttle setting
 
-# Thrust = fdm.cal_prop_force()
-# print(f"Thrust: {Thrust}")
+        # 返回更新后的状态
+        state = {
+            'x': x,
+            'y': y,
+            'z': z,
+            'x_t': x_t,
+            'y_t': y_t,
+            'z_t': z_t,
+            'v': v,
+            'alpha': alpha,
+            'beta': beta,
+            'gamma': gamma,
+            'chi': chi,
+            'chi_t': chi_t,
+            'mu': mu,
+            'thr': thr
+        }
 
-# fdm = fdm_3Dof()
-# fdm.alpha = 5.0
-# fdm.beta = 0
-# fdm.mach = 0.8
-# fdm.v = 250  # m/s
-# fdm.alt = 1000  # meters
-
-# D, L, Y = fdm.cal_aero_force()
-# print(f"Drag: {D}, Lift: {L}, Side Force: {Y}")
+        return state
