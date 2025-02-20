@@ -62,10 +62,16 @@ def DCM(axis, angle_deg):
     return    L   
 
 
-def scale(action, action_type):
+def scale(action):
     action = np.array(action, dtype=float)
-    # 得到物理范围
-    min_val, max_val = limit(action_type)
-    scaled_val = ((action + 1) / 2) * (max_val - min_val) + min_val
+    """
+    对输入的动作进行缩放。
+    :param action: 输入动作（包含 alpha, beta, thr）
+    :return: 缩放后的动作
+    """
+    delta_alpha = action[0] * np.deg2rad(15)
+    delta_beta = action[1] * np.deg2rad(6)
+    delta_thr = clamp(action[2],0, 1.03)
 
-    return scaled_val
+
+    return delta_alpha, delta_beta, delta_thr

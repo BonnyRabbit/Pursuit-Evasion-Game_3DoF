@@ -18,7 +18,7 @@ class Fdm3DoF:
         self.var_prop = model_data['var_prop']
         self.grid_axes_prop = model_data['grid_axes_prop']
         # 固定参数
-        self.dt_AP = 0.05
+        self.dt_AP = 1
         self.mass = 200
         self.g = 9.8
         self.RefArea = self.data_aero['RefArea']
@@ -36,6 +36,9 @@ class Fdm3DoF:
             var_prop=self.var_prop,
             grid_axes_prop=self.grid_axes_prop
         )
+        # 逃逸者运动规律
+        self.evader_velocity = np.array([80, 0, 0], dtype=np.float32)
+        self.chi_t_dot = 0
 
     def calculate_mach(self, v, alt):
         temp = 273.15
@@ -86,6 +89,13 @@ class Fdm3DoF:
         L_kb = L_ka @ L_ab
 
         return L_ka, L_gk, L_kb, L_kg
+    
+    def check_chi(self, chi):
+        if chi > math.pi:
+            chi -= 2 * math.pi
+        elif chi < -math.pi:
+            chi += 2 * math.pi
+        return chi
 
     def run(self, state, action):
         """
@@ -103,12 +113,17 @@ class Fdm3DoF:
         alt = -z  # 假设 z 是向下为正
 
         # 提取动作
-        delta_alpha, delta_beta, delta_thr = action  # 假设动作已经缩放
+        delta_alpha, delta_beta, delta_thr = scale(action)  # 缩放动作
 
         # 更新控制输入
         alpha += math.radians(delta_alpha) * self.dt_AP
         beta += math.radians(delta_beta) * self.dt_AP
         thr += delta_thr * self.dt_AP
+
+        alpha = np.clip(alpha, math.radians(-3), math.radians(12))
+        beta = np.clip(beta, math.radians(-6), math.radians(6))
+        thr = np.clip(thr, 0, 1.03)
+
 
         # 计算马赫数
         mach = self.calculate_mach(v, alt)
@@ -137,14 +152,21 @@ class Fdm3DoF:
         wz = Fy / (mass * v)
         chi_dot = wz / math.cos(gamma) if math.cos(gamma) != 0 else 0
 
-        # 更新状态
+        # 更新追击者状态
         x += dx * self.dt_AP
         y += dy * self.dt_AP
         z += dz * self.dt_AP
         v += v_dot * self.dt_AP
         gamma += gamma_dot * self.dt_AP
         chi += chi_dot * self.dt_AP
+        chi = self.check_chi(chi)
 
+        # 更新逃避者状态（x_t, y_t, z_t）
+        x_t += self.evader_velocity[0] * self.dt_AP
+        y_t += self.evader_velocity[1] * self.dt_AP
+        z_t += self.evader_velocity[2] * self.dt_AP
+        chi_t += self.chi_t_dot * self.dt_AP
+        chi_t = self.check_chi(chi_t)
 
 
         # 返回更新后的状态
