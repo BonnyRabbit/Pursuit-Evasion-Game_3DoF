@@ -6,27 +6,34 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
-from fdmEnv import PursuitEvasionGame  
+from fdmEnv import PursuitEvasionGame, StableFlyingEnv, TargetFlyingEnv
 from callback import TensorboardTimeSeriesCallback
 
-def make_env(render_mode=None):
+def make_env(stage, render_mode=None):
     """
-    创建并返回一个监控的环境。
+    根据不同阶段选择环境。
     """
-    env = PursuitEvasionGame(render_mode=render_mode)
-    # env = Monitor(env)  # 添加监控包装器以记录训练过程
-    return env
+    if stage == 1:
+        return StableFlyingEnv(render_mode=render_mode)
+    elif stage == 2:
+        return TargetFlyingEnv(render_mode=render_mode)
+    else:
+        return PursuitEvasionGame(render_mode=render_mode)
+    # env = PursuitEvasionGame(render_mode=render_mode)
+    # # env = Monitor(env)  # 添加监控包装器以记录训练过程
+    # return env
 
 def main():
     # 创建日志目录
     log_dir = "logs/"
+    stage = 1
     os.makedirs(log_dir, exist_ok=True)
 
     # 创建评估环境
-    eval_env = DummyVecEnv([lambda: make_env(render_mode=None)])
+    eval_env = DummyVecEnv([lambda: make_env(stage=stage, render_mode=None)])
 
-    # 创建训练环境
-    train_env = DummyVecEnv([lambda: make_env(render_mode=None)])
+    # # 创建训练环境
+    train_env = DummyVecEnv([lambda: make_env(stage=stage, render_mode=None)])
 
     # 可选：检查环境是否符合 Gym API
     # 这对于调试非常有用
@@ -44,7 +51,7 @@ def main():
         n_epochs=10,              # 优化代理损失时的迭代次数
         gamma=0.99,               # 折扣因子
         gae_lambda=0.95,          # GAE lambda 参数
-        clip_range=0.15,           # PPO 剪切参数
+        clip_range=0.25,           # PPO 剪切参数
         ent_coef=0.0,             # 熵系数
         vf_coef=0.5,              # 值函数系数
         max_grad_norm=0.5         # 梯度最大范数
@@ -66,10 +73,10 @@ def main():
         render=False
     )
 
-    tb_time_series_callback = TensorboardTimeSeriesCallback(log_dir=log_dir, dt_AP=0.005)
+    tb_time_series_callback = TensorboardTimeSeriesCallback(log_dir=log_dir, dt_AP=0.1)
 
     # 训练模型
-    total_timesteps = 1_000_000  # 根据需要调整总步数
+    total_timesteps = 5_000_000  # 根据需要调整总步数
     model.learn(
         total_timesteps=total_timesteps,
         callback=[checkpoint_callback, eval_callback, tb_time_series_callback],

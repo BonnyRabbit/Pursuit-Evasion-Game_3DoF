@@ -18,7 +18,7 @@ class Fdm3DoF:
         self.var_prop = model_data['var_prop']
         self.grid_axes_prop = model_data['grid_axes_prop']
         # 固定参数
-        self.dt_AP = 1
+        self.dt_AP = 0.1
         self.mass = 200
         self.g = 9.8
         self.RefArea = self.data_aero['RefArea']
@@ -131,26 +131,35 @@ class Fdm3DoF:
         # 计算气动力
         D, L, Y = self.calculate_aero_force(alpha, beta, mach, v, alt)
         # 计算推进力
-        T = self.calculate_prop_force(mach, alt, thr)
+        T = 1.5 * self.calculate_prop_force(mach, alt, thr)
 
         # 计算方向余弦矩阵
         L_ka, L_gk, L_kb, L_kg = self.calculate_dcm(gamma, chi, alpha, beta, mu)
 
-        # 速度向量在惯性系中的表示
-        v_g = L_gk @ np.array([[v], [0], [0]])
-        dx, dy, dz = v_g.flatten()
+        # # 速度向量在惯性系中的表示
+        # v_g = L_gk @ np.array([[v], [0], [0]])
+        # dx, dy, dz = v_g.flatten()
 
-        # 计算航迹轴下F
-        F = (L_kb @ np.array([[T], [0], [0]])
-             + L_ka @ np.array([[-D], [Y], [-L]])
-             + L_kg @ np.array([[0], [0], [mass * self.g]]))
-        Fx, Fy, Fz = F.flatten()
+        # # 计算航迹轴下F
+        # F = (L_kb @ np.array([[T], [0], [0]])
+        #      + L_ka @ np.array([[-D], [Y], [-L]])
+        #      + L_kg @ np.array([[0], [0], [mass * self.g]]))
+        # Fx, Fy, Fz = F.flatten()
 
-        # 计算加速度和角速度
-        v_dot = Fx / mass
-        gamma_dot = -Fz / (mass * v)
-        wz = Fy / (mass * v)
-        chi_dot = wz / math.cos(gamma) if math.cos(gamma) != 0 else 0
+        # # 计算加速度和角速度
+        # v_dot = Fx / mass
+        # gamma_dot = -Fz / (mass * v)
+        # wz = Fy / (mass * v)
+        # chi_dot = wz / math.cos(gamma) if math.cos(gamma) != 0 else 0
+
+        dx = v * math.cos(gamma) * math.cos(chi)
+        dy = v * math.cos(gamma) * math.sin(chi)
+        dz = -v * math.sin(gamma)
+        v_dot = (T * math.cos(alpha) - D) / mass - self.g * math.sin(gamma)
+        chi_dot = (T * (math.sin(alpha) * math.sin(mu) - math.cos(alpha) * math.sin(beta) * math.cos(mu)) + Y * math.cos(mu) + L * math.sin(mu))\
+              / (mass * v * math.cos(gamma)) 
+        gamma_dot = (T * (math.sin(alpha) * math.cos(mu) + math.cos(alpha) * math.sin(beta) * math.sin(mu)) - Y * math.sin(mu) + L * math.cos(mu)\
+                      - mass * self.g * math.cos(gamma)) / (mass * v)
 
         # 更新追击者状态
         x += dx * self.dt_AP

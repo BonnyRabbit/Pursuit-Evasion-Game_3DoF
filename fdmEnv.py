@@ -1,8 +1,9 @@
 import numpy as np
 import gym
+import math
 from typing import Dict
 from gym import spaces
-from utils import scale
+from utils import scale, plot_rslt
 from fdm import Fdm3DoF
 
 class PursuitEvasionGame(gym.Env):
@@ -12,8 +13,20 @@ class PursuitEvasionGame(gym.Env):
         super(PursuitEvasionGame, self).__init__()
         self.episode = 0
         self.time_step = 0
-        self.max_time_step = 10000
+        self.max_time_step = 1000
         self.total_reward = 0.0
+        # 初期训练时奖励函数权重
+        self.w1 = 0.1   # alpha限幅
+        self.w2 = 0.1   # gamma限幅
+        self.w3 = 0.1   # hdot限幅
+        self.w4 = 0.1   # 油门限幅
+        self.w5 = 0.3   # 侧偏距
+        self.w6 = 0.3   # 爬升
+        # 记录日志
+        self.alpha_log = []
+        self.beta_log = []
+        self.thr_log = []
+        self.gamma_log = []
         self.x_log = []
         self.y_log = []
         self.z_log = []
@@ -70,6 +83,15 @@ class PursuitEvasionGame(gym.Env):
         # action = scale(action)
         # 3dof模块更新状态
         self.state = self.fdm.run(self.state, action)
+        # 记录日志
+        self.alpha_log.append(np.rad2deg(self.state['alpha']))
+        self.beta_log.append(np.rad2deg(self.state['beta']))
+        self.thr_log.append(self.state['thr'])
+        self.gamma_log.append(np.rad2deg(self.state['gamma']))
+        self.x_log.append(self.state['x'])
+        self.y_log.append(self.state['y'])
+        self.z_log.append(self.state['z'])
+
         # 计算奖励
         reward = self.get_reward(self.state)
         # 检查是否完成
@@ -83,6 +105,15 @@ class PursuitEvasionGame(gym.Env):
     def reset(self):
         self.time_step = 0
         self.prev_distance = 0
+        self.total_reward = 0
+        # 重置日志
+        self.alpha_log = []
+        self.beta_log = []
+        self.thr_log = []
+        self.gamma_log = []
+        self.x_log = []
+        self.y_log = []
+        self.z_log = []
         # 定义初始状态
         initial_state: Dict[str, float] = {
             'x': 0.0,
@@ -95,8 +126,8 @@ class PursuitEvasionGame(gym.Env):
             'alpha': np.deg2rad(4.0),   # 初始攻角 4°
             'beta': np.deg2rad(0.0),    # 初始侧滑角 0°
             'gamma': np.deg2rad(0.0),   # 初始航迹倾角 0°
-            'chi': np.deg2rad(90.0),    # 初始航向 90°
-            'chi_t': np.deg2rad(90.0),      # 目标航向 90°
+            'chi': np.deg2rad(0.0),    # 初始航向 90°
+            'chi_t': np.deg2rad(0.0),      # 目标航向 90°
             'mu': np.deg2rad(0.0),    # 初始绕速度滚转角 0°
             'thr': 0.7        # 初始油门 0.7
         }
@@ -161,12 +192,86 @@ class PursuitEvasionGame(gym.Env):
             print(f"超过最大步数,距离: {distance}")
             return True
         if state['z'] > -1000:
-            print(f"过低高度: {-state['z']}_步数: {self.time_step}_alpha: {np.rad2deg(state['alpha']):.2f}°_beta: {np.rad2deg(state['beta']):.2f}°_gamma: {np.rad2deg(state['gamma']):.2f}°_thr: {state['thr']:.2f}")
+            print(f"过低高度: {-state['z']} 步数: {self.time_step} alpha: {np.rad2deg(state['alpha']):.2f}\°\
+ beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° thr: {state['thr']:.2f}")
             return True
         if distance > 15000:
-            print(f"逃脱攻击区:{distance}_步数: {self.time_step}_alpha: {np.rad2deg(state['alpha']):.2f}°_beta: {np.rad2deg(state['beta']):.2f}°_gamma: {np.rad2deg(state['gamma']):.2f}°_thr: {state['thr']:.2f}")
+            print(f"逃脱攻击区:{distance} 步数: {self.time_step} alpha: {np.rad2deg(state['alpha']):.2f}°\
+ beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° thr: {state['thr']:.2f}")
             return True
         return False
 
     def get_info(self, state):
         return {}
+    
+class StableFlyingEnv(PursuitEvasionGame):
+    def __init__(self, render_mode=None):
+        super(StableFlyingEnv, self).__init__(render_mode)
+        # 继承PEG，课程学习的初始阶段，只要求无人机平稳飞行
+
+    def get_reward(self, state):
+        # 奖励函数设计为保持平稳飞行
+        reward_init = 2e-3
+        reward = 0.0
+        # 限制攻角在-3°到6°之间
+        if state['alpha'] > np.deg2rad(-3) and state['alpha'] < np.deg2rad(6):
+            reward += reward_init * self.w1
+        # 限制航迹倾角在-15°到15°之间
+        if state['gamma'] > np.deg2rad(-15) and state['alpha'] < np.deg2rad(15):
+            reward += reward_init * self.w2
+        # 限制爬升率在-30m/s到40m/s之间
+        if (state['v'] * math.sin(state['gamma'])) > -30 and (state['v'] * math.sin(state['gamma'])) < 40:
+            reward += reward_init * self.w3
+        # 保持怠速油门
+        if state['thr'] > 0.66:
+            reward += reward_init * self.w4
+        # 限制侧偏距在-100m到100m之间
+        if abs(state['y']) < 100:
+            reward += reward_init * self.w5
+        # 尽可能爬升
+        if state['gamma'] > 0 and state['gamma'] < np.deg2rad(20):
+            reward += reward_init * self.w6
+        # 部分满足时奖励
+        if self.total_reward >= 0.5:
+            reward += 1/8 * 1e-3
+        if self.total_reward >= 1:
+            reward += 3/8 * 1e-3
+        if self.total_reward >= 1.7:
+            reward += 1/2 * 1e-3
+        else:
+            reward -= 1e-3
+
+        self.total_reward += reward
+        return self.total_reward
+    
+    def get_done(self, state):
+        # 指定飞行时间结束
+        if self.time_step > self.max_time_step:
+            self.episode += 1
+            print(f"Episode:{self.episode} Reward:{self.total_reward:.2f} alpha: {np.rad2deg(state['alpha']):.2f}°\
+ beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° y: {state['y']:.2f}m\
+ hdot: {math.sin(state['gamma']) * state['v']:.2f}m/s thr: {state['thr']:.2f}")
+            return True
+        return False
+    
+class TargetFlyingEnv(PursuitEvasionGame):
+    def __init__(self, render_mode=None):
+        super(TargetFlyingEnv, self).__init__(render_mode)
+        # 添加目标点的飞行任务
+
+    def get_reward(self, state):
+        reward = super().get_reward(state)  # 使用父类的奖励函数
+        target_position = np.array([5000.0, 0.0, -4000.0])  # 设定目标点
+        current_position = np.array([state['x'], state['y'], state['z']])
+        distance_to_target = np.linalg.norm(current_position - target_position)
+        if distance_to_target < 500:
+            reward += 10  # 达到目标点奖励
+        return reward
+
+    def get_done(self, state):
+        # 达到目标点时任务结束
+        target_position = np.array([5000.0, 0.0, -4000.0])
+        current_position = np.array([state['x'], state['y'], state['z']])
+        if np.linalg.norm(current_position - target_position) < 500:
+            return True
+        return False
