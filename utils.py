@@ -1,6 +1,7 @@
 from scipy.interpolate import RegularGridInterpolator
 import numpy as np
 from saturation import limit
+import matplotlib.pyplot as plt
 
 # 插值表
 def interp(mat, var, grid_axes, method='linear'):
@@ -71,7 +72,47 @@ def scale(action):
     """
     delta_alpha = action[0] * np.deg2rad(15)
     delta_beta = action[1] * np.deg2rad(6)
-    delta_thr = clamp(action[2],0, 1.03)
+    # delta_thr = clamp(action[2],0, 1.03)
+    delta_thr = action[2]
 
 
     return delta_alpha, delta_beta, delta_thr
+
+# 绘图
+def plot_rslt(alpha_log,
+              beta_log,
+              thr_log,
+              gamma_log,
+              x_log,
+              y_log,
+              z_log,
+              total_reward):
+    """
+    绘制一个episode的状态曲线
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(10, 8))
+    # 姿态
+    axes[0].plot(alpha_log, label='alpha')
+    axes[0].plot(beta_log, label='beta')
+    axes[0].plot(thr_log, label='thr')
+    axes[0].plot(gamma_log, label='gamma')
+    axes[0].set_title('姿态 动作曲线')
+    axes[0].set_xlabel('step')
+    axes[0].legend()
+    
+    # 位置
+    axes[1].plot(x_log, label='x')
+    axes[1].plot(y_log, label='y') 
+    axes[1].plot(z_log, label='z')
+    axes[1].set_title('位置曲线')
+    axes[1].legend()
+
+    # 奖励
+    axes[2].plot(total_reward, label='reward')
+    axes[2].set_title('奖励曲线')
+    axes[2].set_xlabel('step')
+    axes[2].set_ylabel('reward')
+    axes[2].legend()
+
+    plt.tight_layout()
+    plt.show()

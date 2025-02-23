@@ -100,6 +100,8 @@ class PursuitEvasionGame(gym.Env):
         info = self.get_info(self.state)
 
         observation = self.get_observation()
+        # 累计奖励 用于日志记录
+        self.total_reward += reward
         return observation, reward, done, info
 
     def reset(self):
@@ -149,7 +151,16 @@ class PursuitEvasionGame(gym.Env):
         return observation
 
     def render(self, mode='human'):
-        pass
+        # 启用渲染开关，在每个回合结束后画图
+        plot_rslt(self.alpha_log,
+                    self.beta_log,
+                    self.thr_log,
+                    self.gamma_log,
+                    self.x_log,
+                    self.y_log,
+                    self.z_log,
+                    self.total_reward)
+
     
     def get_reward(self, state):
         reward = 0.0
@@ -210,49 +221,59 @@ class StableFlyingEnv(PursuitEvasionGame):
         # 继承PEG，课程学习的初始阶段，只要求无人机平稳飞行
 
     def get_reward(self, state):
-        # 奖励函数设计为保持平稳飞行
         reward_init = 2e-3
-        reward = 0.0
-        # 限制攻角在-3°到6°之间
-        if state['alpha'] > np.deg2rad(-3) and state['alpha'] < np.deg2rad(6):
-            reward += reward_init * self.w1
-        # 限制航迹倾角在-15°到15°之间
-        if state['gamma'] > np.deg2rad(-15) and state['alpha'] < np.deg2rad(15):
-            reward += reward_init * self.w2
-        # 限制爬升率在-30m/s到40m/s之间
-        if (state['v'] * math.sin(state['gamma'])) > -30 and (state['v'] * math.sin(state['gamma'])) < 40:
-            reward += reward_init * self.w3
-        # 保持怠速油门
-        if state['thr'] > 0.66:
-            reward += reward_init * self.w4
-        # 限制侧偏距在-100m到100m之间
-        if abs(state['y']) < 100:
-            reward += reward_init * self.w5
-        # 尽可能爬升
-        if state['gamma'] > 0 and state['gamma'] < np.deg2rad(20):
-            reward += reward_init * self.w6
-        # 部分满足时奖励
-        if self.total_reward >= 0.5:
-            reward += 1/8 * 1e-3
-        if self.total_reward >= 1:
-            reward += 3/8 * 1e-3
-        if self.total_reward >= 1.7:
-            reward += 1/2 * 1e-3
-        else:
-            reward -= 1e-3
+        step_reward = 0.0  # 当前步骤的即时奖励
 
-        self.total_reward += reward
-        return self.total_reward
+        # 限制迎角
+        if state['alpha'] > np.deg2rad(-3) and state['alpha'] < np.deg2rad(6):
+            step_reward += reward_init * self.w1
+        else:
+            step_reward -= reward_init * self.w1
+
+        # 限制航迹倾角
+        if -np.deg2rad(15) < state['gamma'] < np.deg2rad(15):
+            step_reward += reward_init * self.w2
+        else:
+            step_reward -= reward_init * self.w2
+
+        # 限制爬升率
+        h_dot = state['v'] * math.sin(state['gamma'])
+        if 0 < h_dot < 40:
+            step_reward += reward_init * self.w3
+        else:
+            step_reward -= reward_init * self.w3
+
+        # 保持油门
+        if state['thr'] >= 0.66:
+            step_reward += reward_init * self.w4
+        else:
+            step_reward -= reward_init * self.w4
+
+        # 限制侧偏距
+        if abs(state['y']) < 100:
+            step_reward += reward_init * self.w5
+        else:
+            step_reward -= reward_init * self.w5
+
+        # 鼓励爬升
+        if 0 < state['gamma'] < np.deg2rad(20):
+            step_reward += reward_init * self.w6
+        else:
+            step_reward -= reward_init * self.w6
+
+        return step_reward  # 返回当前步骤的即时奖励
     
     def get_done(self, state):
         # 指定飞行时间结束
-        if self.time_step > self.max_time_step:
-            self.episode += 1
-            print(f"Episode:{self.episode} Reward:{self.total_reward:.2f} alpha: {np.rad2deg(state['alpha']):.2f}°\
- beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° y: {state['y']:.2f}m\
- hdot: {math.sin(state['gamma']) * state['v']:.2f}m/s thr: {state['thr']:.2f}")
-            return True
-        return False
+        # if self.time_step >= self.max_time_step:
+#             self.episode += 1
+#             print(f"Episode:{self.episode} Reward:{self.total_reward:.2f} alpha: {np.rad2deg(state['alpha']):.2f}°\
+#  beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° y: {state['y']:.2f}m\
+#  hdot: {math.sin(state['gamma']) * state['v']:.2f}m/s thr: {state['thr']:.2f}")
+#             return True
+#         return False
+        return self.time_step >= self.max_time_step
+
     
 class TargetFlyingEnv(PursuitEvasionGame):
     def __init__(self, render_mode=None):

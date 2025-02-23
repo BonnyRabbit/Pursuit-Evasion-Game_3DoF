@@ -9,31 +9,32 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from fdmEnv import PursuitEvasionGame, StableFlyingEnv, TargetFlyingEnv
 from callback import TensorboardTimeSeriesCallback
 
-def make_env(stage, render_mode=None):
+def make_env(stage, render_mode='human'):
     """
     根据不同阶段选择环境。
     """
-    if stage == 1:
-        return StableFlyingEnv(render_mode=render_mode)
-    elif stage == 2:
-        return TargetFlyingEnv(render_mode=render_mode)
-    else:
-        return PursuitEvasionGame(render_mode=render_mode)
-    # env = PursuitEvasionGame(render_mode=render_mode)
-    # # env = Monitor(env)  # 添加监控包装器以记录训练过程
-    # return env
+    def _init():
+        if stage == 1:
+            env = StableFlyingEnv(render_mode=render_mode)
+        elif stage == 2:
+            env = TargetFlyingEnv(render_mode=render_mode)
+        else:
+            env = PursuitEvasionGame(render_mode=render_mode)
+        print(f"Environment created: {env}")
+        return env
+    return _init
 
 def main():
     # 创建日志目录
     log_dir = "logs/"
-    stage = 1
+    stage = 1 # 训练阶段
     os.makedirs(log_dir, exist_ok=True)
 
     # 创建评估环境
-    eval_env = DummyVecEnv([lambda: make_env(stage=stage, render_mode=None)])
+    eval_env = DummyVecEnv([make_env(stage=stage, render_mode=None)])
 
     # # 创建训练环境
-    train_env = DummyVecEnv([lambda: make_env(stage=stage, render_mode=None)])
+    train_env = DummyVecEnv([make_env(stage=stage, render_mode=None)])
 
     # 可选：检查环境是否符合 Gym API
     # 这对于调试非常有用
@@ -58,28 +59,28 @@ def main():
     )
 
     # 回调函数，用于保存模型和评估模型
-    checkpoint_callback = CheckpointCallback(
-        save_freq=10000,                 # 每 10,000 步保存一次模型
-        save_path=log_dir,               # 模型保存目录
-        name_prefix='ppo_pursuit_evasion'  # 模型名称前缀
-    )
-
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=os.path.join(log_dir, 'best_model/'),
-        log_path=log_dir,
-        eval_freq=5000,                   # 每 5,000 步进行一次评估
-        deterministic=True,
-        render=False
-    )
-
-    tb_time_series_callback = TensorboardTimeSeriesCallback(log_dir=log_dir, dt_AP=0.1)
+    callbacks = [
+        CheckpointCallback(
+            save_freq=10000,                 # 每 10,000 步保存一次模型
+            save_path=log_dir,               # 模型保存目录
+            name_prefix='ppo_pursuit_evasion'  # 模型名称前缀
+        ),
+        EvalCallback(
+            eval_env,
+            best_model_save_path=os.path.join(log_dir, 'best_model/'),
+            log_path=log_dir,
+            eval_freq=5000,
+            deterministic=True,
+            render=False
+        ),
+        TensorboardTimeSeriesCallback(log_dir=log_dir)
+    ]
 
     # 训练模型
     total_timesteps = 5_000_000  # 根据需要调整总步数
     model.learn(
         total_timesteps=total_timesteps,
-        callback=[checkpoint_callback, eval_callback, tb_time_series_callback],
+        callback=callbacks,
         tb_log_name="ppo_pursuit_evasion"
     )
 
