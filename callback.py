@@ -74,32 +74,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
                 
         buffer = self.episode_buffers[env_idx]
         
-        # 奖励
-        total_reward = sum(buffer['rewards'])
-        self.writer.add_scalar(f"episode_{episode_num}/reward", total_reward, episode_num)
-        
-        # # 动作分布直方图，只记录 action_names 中定义的动作
-        # actions = np.array(buffer['actions'])
-        # for i, name in enumerate(self.action_names):
-        #     self.writer.add_histogram(
-        #         f"episode_{episode_num}/actions/{name}", 
-        #         actions[:, i], 
-        #         episode_num
-        #     )
-        
         obs = np.array(buffer['observations'])
-        # for i, name in enumerate(self.obs_names):
-        #     converted = [self._convert_value(name, val) for val in obs[:, i]]
-        #     self.writer.add_scalar(
-        #         f"episode_{episode_num}/observations/{name}_mean",
-        #         np.mean(converted),
-        #         episode_num
-        #     )
-        #     self.writer.add_scalar(
-        #         f"episode_{episode_num}/observations/{name}_max",
-        #         np.max(converted),
-        #         episode_num
-        #     )
             
         #  action和observation中的数据
         for step, (act, obs) in enumerate(zip(buffer['actions'], buffer['observations'])):
