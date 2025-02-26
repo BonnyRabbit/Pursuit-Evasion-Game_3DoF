@@ -1,4 +1,3 @@
-# callback.py
 import os
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
@@ -39,7 +38,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
     def _convert_value(self, name: str, value: float) -> float:
         if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu']:
             return np.rad2deg(value)
-        elif name == 'z':
+        elif name in ['z', 'z_t']:
             return -value
         return value
     

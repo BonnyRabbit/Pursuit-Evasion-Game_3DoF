@@ -15,13 +15,6 @@ class PursuitEvasionGame(gym.Env):
         self.time_step = 0
         self.max_time_step = 1000
         self.total_reward = 0.0
-        # 初期训练时奖励函数权重
-        self.w1 = 0.1   # alpha限幅
-        self.w2 = 0.1   # gamma限幅
-        self.w3 = 0.1   # hdot限幅
-        self.w4 = 0.1   # 油门限幅
-        self.w5 = 0.3   # 侧偏距
-        self.w6 = 0.3   # 爬升
         # 记录日志
         self.alpha_log = []
         self.beta_log = []
@@ -40,7 +33,7 @@ class PursuitEvasionGame(gym.Env):
         -10000.0,  # x_t
         -10000.0,  # y_t
         -80000.0,  # z_t
-        0.0,       # v
+        80.0,       # v
         np.deg2rad(-6.0),     # alpha
         np.deg2rad(-6.0),     # beta
         np.deg2rad(-20.0),     # gamma
@@ -57,7 +50,7 @@ class PursuitEvasionGame(gym.Env):
             10000.0,   # x_t
             10000.0,   # y_t
             0.0,   # z_t
-            180.0,     # v
+            250.0,     # v
             np.deg2rad(12.0),      # alpha
             np.deg2rad(6.0),      # beta
             np.deg2rad(20.0),      # gamma
@@ -93,7 +86,7 @@ class PursuitEvasionGame(gym.Env):
         self.z_log.append(self.state['z'])
 
         # 计算奖励
-        reward = self.get_reward(self.state)
+        reward = self.get_reward(self.state, action)
         # 检查是否完成
         done = self.get_done(self.state)
         # 获取额外信息
@@ -120,16 +113,16 @@ class PursuitEvasionGame(gym.Env):
         initial_state: Dict[str, float] = {
             'x': 0.0,
             'y': 0.0,
-            'z': -4000.0,      # 初始高度 4000 米
+            'z': -1000.0,      # 初始高度 1000 米
             'x_t': 3000.0,
             'y_t': 0.0, 
             'z_t': -5000.0,   # 目标高度 5000 米
-            'v': 100.0,        # 初始速度
-            'alpha': np.deg2rad(4.0),   # 初始攻角 4°
+            'v': 165.0,        # 初始速度
+            'alpha': np.deg2rad(3.0),   # 初始攻角 3°
             'beta': np.deg2rad(0.0),    # 初始侧滑角 0°
-            'gamma': np.deg2rad(0.0),   # 初始航迹倾角 0°
-            'chi': np.deg2rad(0.0),    # 初始航向 90°
-            'chi_t': np.deg2rad(0.0),      # 目标航向 90°
+            'gamma': np.deg2rad(3.0),   # 初始航迹倾角 0°
+            'chi': np.deg2rad(0.0),    # 初始航向 0°
+            'chi_t': np.deg2rad(0.0),      # 目标航向 0°
             'mu': np.deg2rad(0.0),    # 初始绕速度滚转角 0°
             'thr': 0.7        # 初始油门 0.7
         }
@@ -162,7 +155,7 @@ class PursuitEvasionGame(gym.Env):
                     self.total_reward)
 
     
-    def get_reward(self, state):
+    def get_reward(self, state, action):
         reward = 0.0
         persuer_pos = np.array([state['x'], state['y'], state['z']])
         evader_pos = np.array([state['x_t'], state['y_t'], state['z_t']])
@@ -218,61 +211,92 @@ class PursuitEvasionGame(gym.Env):
 class StableFlyingEnv(PursuitEvasionGame):
     def __init__(self, render_mode=None):
         super(StableFlyingEnv, self).__init__(render_mode)
-        # 继承PEG，课程学习的初始阶段，只要求无人机平稳飞行
+        # 调整权重系数
+        self.alpha_range = (2.0, 4.0)  # 目标迎角范围
+        self.target_speed = 170.0      # 目标巡航速度
+        self.w = {
+            'alpha': 2.0,   # 迎角核心指标
+            'beta': 1.5,     # 侧滑角零值保持
+            'gamma': 5.0,    # 航迹倾角零值保持
+            'speed': 1.2,    # 速度保持
+            'offset': 0.8,   # 侧偏距抑制
+            'action': 0.05,  # 动作平滑
+            'thr':   0.5     # 油门限幅
+        }
 
-    def get_reward(self, state):
-        reward_init = 2e-3
-        step_reward = 0.0  # 当前步骤的即时奖励
-
-        # 限制迎角
-        if state['alpha'] > np.deg2rad(-3) and state['alpha'] < np.deg2rad(6):
-            step_reward += reward_init * self.w1
+    def get_reward(self, state, action):
+        # 单位统一转换为角度制
+        alpha_deg = np.rad2deg(state['alpha'])
+        beta_deg = np.rad2deg(state['beta'])
+        gamma_deg = np.rad2deg(state['gamma'])
+        
+        # 核心奖励项设计
+        # 1. 迎角维持奖励（钟形曲线奖励）
+        alpha_center = (self.alpha_range[0] + self.alpha_range[1])/2
+        alpha_dev = max(self.alpha_range[1] - self.alpha_range[0], 1e-5)
+        alpha_reward = np.exp(-4*((alpha_deg - alpha_center)/alpha_dev)**2)
+        
+        # 2. 侧滑角抑制（二次惩罚）
+        beta_penalty = (beta_deg/6.0)**2  # 归一化到0-1范围
+        
+        # 3. 航迹倾角抑制（二次惩罚）
+        gamma_penalty = (gamma_deg/20.0)**2  # 归一化到0-1范围
+        
+        # 4. 速度保持奖励（分段函数）
+        speed_error = abs(state['v'] - self.target_speed)
+        if speed_error <= 5:  # 允许±5m/s误差
+            speed_reward = 1.0
         else:
-            step_reward -= reward_init * self.w1
-
-        # 限制航迹倾角
-        if -np.deg2rad(15) < state['gamma'] < np.deg2rad(15):
-            step_reward += reward_init * self.w2
+            speed_reward = np.exp(-0.01*speed_error)
+        
+        # 5. 侧向偏移抑制（指数衰减）
+        lateral_offset = abs(state['y'] * math.sin(state['chi']))
+        offset_reward = np.exp(-0.0001*lateral_offset)
+        
+        # 6. 动作平滑惩罚（变化率抑制）
+        if hasattr(self, 'prev_action'):
+            action_change = np.mean(np.abs(action - self.prev_action))
         else:
-            step_reward -= reward_init * self.w2
+            action_change = 0.0
+        self.prev_action = action.copy()
 
-        # 限制爬升率
-        h_dot = state['v'] * math.sin(state['gamma'])
-        if 0 < h_dot < 40:
-            step_reward += reward_init * self.w3
+        # 7. 油门限幅(分段函数)
+        # 0.5~0.9获得最大奖励,<0.4或>0.9惩罚
+        thr = state['thr']
+        if 0.5 <= thr <= 0.9:
+            thr_reward = np.exp(-5*(thr-0.7)**2)
+        elif thr < 0.4:
+            thr_reward = -2.0 + (thr - 0.4) * 5
         else:
-            step_reward -= reward_init * self.w3
+            thr_reward = -abs(thr - 0.7)
+        
+        # 综合奖励计算
+        reward = (
+            self.w['alpha'] * alpha_reward
+            - self.w['beta'] * beta_penalty
+            - self.w['gamma'] * gamma_penalty
+            + self.w['speed'] * speed_reward
+            + self.w['offset'] * offset_reward
+            - self.w['action'] * (np.mean(action**2) + 0.5*action_change)
+            + self.w['thr'] * thr_reward
+        )
+        
+        # 边界条件惩罚（硬约束）
+        if state['z'] > -1000:  # 高度低于1000米
+            reward -= 10.0
+        if abs(beta_deg) > 6.0:  # 侧滑角超过±6°
+            reward -= 3.0
+        if abs(gamma_deg) > 25.0:   # 航迹倾角超过±25°
+            reward -= 3.0
 
-        # 保持油门
-        if state['thr'] >= 0.66:
-            step_reward += reward_init * self.w4
-        else:
-            step_reward -= reward_init * self.w4
+        return reward
 
-        # 限制侧偏距
-        if abs(state['y']) < 100:
-            step_reward += reward_init * self.w5
-        else:
-            step_reward -= reward_init * self.w5
-
-        # 鼓励爬升
-        if 0 < state['gamma'] < np.deg2rad(20):
-            step_reward += reward_init * self.w6
-        else:
-            step_reward -= reward_init * self.w6
-
-        return step_reward  # 返回当前步骤的即时奖励
     
     def get_done(self, state):
-        # 指定飞行时间结束
-        # if self.time_step >= self.max_time_step:
-#             self.episode += 1
-#             print(f"Episode:{self.episode} Reward:{self.total_reward:.2f} alpha: {np.rad2deg(state['alpha']):.2f}°\
-#  beta: {np.rad2deg(state['beta']):.2f}° gamma: {np.rad2deg(state['gamma']):.2f}° y: {state['y']:.2f}m\
-#  hdot: {math.sin(state['gamma']) * state['v']:.2f}m/s thr: {state['thr']:.2f}")
-#             return True
-#         return False
-        return self.time_step >= self.max_time_step
+        # 指定飞行时间结束/增加任务结束条件
+        if state['z'] > -1000 or abs(np.rad2deg(state['gamma'])) > 25 or abs(np.rad2deg(state['beta'])) > 3.0 or self.time_step >= self.max_time_step:
+            return True
+        return super().get_done(state)
 
     
 class TargetFlyingEnv(PursuitEvasionGame):
@@ -282,10 +306,10 @@ class TargetFlyingEnv(PursuitEvasionGame):
 
     def get_reward(self, state):
         reward = super().get_reward(state)  # 使用父类的奖励函数
-        target_position = np.array([5000.0, 0.0, -4000.0])  # 设定目标点
+        target_position = np.array([15000.0, 0.0, -8000.0])  # 设定目标点
         current_position = np.array([state['x'], state['y'], state['z']])
         distance_to_target = np.linalg.norm(current_position - target_position)
-        if distance_to_target < 500:
+        if distance_to_target < 200:
             reward += 10  # 达到目标点奖励
         return reward
 

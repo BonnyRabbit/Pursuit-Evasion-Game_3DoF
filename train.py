@@ -46,7 +46,7 @@ def main():
         train_env,                # 训练环境
         verbose=1,                # 显示详细信息的级别
         tensorboard_log=log_dir,  # TensorBoard 日志目录
-        learning_rate=3e-4,       # 学习率
+        learning_rate=2e-4,       # 学习率
         n_steps=2048,             # 每次更新前在每个环境中运行的步数
         batch_size=64,            # 小批量大小
         n_epochs=10,              # 优化代理损失时的迭代次数
@@ -58,7 +58,7 @@ def main():
         max_grad_norm=0.5         # 梯度最大范数
     )
 
-    # 回调函数，用于保存模型和评估模型
+    # 回调函数，用于保存模型、评估模型和查看自定义指标
     callbacks = [
         CheckpointCallback(
             save_freq=10000,                 # 每 10,000 步保存一次模型
