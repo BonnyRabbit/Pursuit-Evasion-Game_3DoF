@@ -37,7 +37,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
         self.writer = SummaryWriter(log_dir=self.log_dir)
         
     def _convert_value(self, name: str, value: float) -> float:
-        if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma']:
+        if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu']:
             return np.rad2deg(value)
         elif name == 'z':
             return -value
