@@ -55,7 +55,9 @@ def main():
         clip_range=0.25,           # PPO 剪切参数
         ent_coef=0.0,             # 熵系数
         vf_coef=0.5,              # 值函数系数
-        max_grad_norm=0.5         # 梯度最大范数
+        max_grad_norm=0.5,         # 梯度最大范数
+        policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64]),
+                            vf=[256, 128, 64])  # pi、vf 网络结构
     )
 
     # 回调函数，用于保存模型、评估模型和查看自定义指标

@@ -218,9 +218,9 @@ class StableFlyingEnv(PursuitEvasionGame):
             'alpha': 2.0,   # 迎角核心指标
             'beta': 1.5,     # 侧滑角零值保持
             'gamma': 5.0,    # 航迹倾角零值保持
-            'speed': 1.2,    # 速度保持
+            'speed': 3,    # 速度保持
             'offset': 0.8,   # 侧偏距抑制
-            'action': 0.05,  # 动作平滑
+            'action': 0.1,  # 动作平滑
             'thr':   0.5     # 油门限幅
         }
 
