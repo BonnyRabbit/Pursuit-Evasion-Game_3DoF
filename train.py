@@ -1,6 +1,8 @@
 import os
 import gym
+import time
 import numpy as np
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_checker import check_env
@@ -8,6 +10,8 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from fdmEnv import PursuitEvasionGame, StableFlyingEnv, TargetFlyingEnv
 from callback import TensorboardTimeSeriesCallback
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def make_env(stage, render_mode='human'):
     """
@@ -25,6 +29,8 @@ def make_env(stage, render_mode='human'):
     return _init
 
 def main():
+    # 记录开始时间
+    start_time = time.time()
     # 创建日志目录
     log_dir = "logs/"
     stage = 1 # 训练阶段
@@ -44,6 +50,7 @@ def main():
     model = PPO(
         "MlpPolicy",              # 策略网络类型
         train_env,                # 训练环境
+        device=device,            # 训练设备
         verbose=1,                # 显示详细信息的级别
         tensorboard_log=log_dir,  # TensorBoard 日志目录
         learning_rate=2e-4,       # 学习率
@@ -56,8 +63,12 @@ def main():
         ent_coef=0.0,             # 熵系数
         vf_coef=0.5,              # 值函数系数
         max_grad_norm=0.5,         # 梯度最大范数
-        policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64]),
-                            vf=[256, 128, 64])  # pi、vf 网络结构
+        policy_kwargs=dict(
+            net_arch=dict(
+                pi=[256, 128, 64],
+                vf=[256, 128, 64]
+                )
+            )  # pi、vf 网络结构
     )
 
     # 回调函数，用于保存模型、评估模型和查看自定义指标
@@ -79,12 +90,22 @@ def main():
     ]
 
     # 训练模型
-    total_timesteps = 5_000_000  # 根据需要调整总步数
+    total_timesteps = 50_000  # 根据需要调整总步数
     model.learn(
         total_timesteps=total_timesteps,
         callback=callbacks,
         tb_log_name="ppo_pursuit_evasion"
     )
+    
+    # 记录结束时间
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+
+    # 打印训练时长
+    print(f"训练完成，耗时: {hours}h {minutes}min {seconds}s")
 
     # 保存最终模型
     model.save(os.path.join(log_dir, "ppo_pursuit_evasion_final"))
