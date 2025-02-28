@@ -15,7 +15,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
     
     def __init__(self, 
                  log_dir: str, 
-                 log_freq: int = 1,  # 每回合都记录
+                 log_freq: int = 20,  # 记录频率
                  verbose: int = 0):
         super().__init__(verbose)
         self.log_dir = os.path.join(log_dir, "custom_metrics")
@@ -28,7 +28,8 @@ class TensorboardTimeSeriesCallback(BaseCallback):
         self.action_names = ['dalpha', 'dbeta', 'dthr']
         self.obs_names = [
             'x', 'y', 'z', 'x_t', 'y_t', 'z_t', 'v',
-            'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'thr'
+            'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'thr',
+            'rel_chi','rel_dist'
         ]
         
     def _init_callback(self) -> None:
@@ -36,7 +37,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
         self.writer = SummaryWriter(log_dir=self.log_dir)
         
     def _convert_value(self, name: str, value: float) -> float:
-        if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu']:
+        if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'rel_chi']:
             return np.rad2deg(value)
         elif name in ['z', 'z_t']:
             return -value
@@ -91,8 +92,6 @@ class TensorboardTimeSeriesCallback(BaseCallback):
                     self._convert_value(name, value),
                     step
                 )
-
-
 
     def _on_close(self) -> None:
         for env_idx in self.episode_buffers:

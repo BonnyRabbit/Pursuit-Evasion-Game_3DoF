@@ -177,6 +177,14 @@ class Fdm3DoF:
         chi_t += self.chi_t_dot * self.dt_AP
         chi_t = self.check_chi(chi_t)
 
+        # 更新相对航向和距离
+        dx = x_t - x
+        dy = y_t - y
+        dz = z_t - z
+
+        rel_chi = math.atan2(dy, dx) - chi
+        xy_dist = math.hypot(dx, dy)
+        rel_dist = math.hypot(xy_dist, dz)
 
         # 返回更新后的状态
         state = {
@@ -193,7 +201,9 @@ class Fdm3DoF:
             'chi': chi,
             'chi_t': chi_t,
             'mu': mu,
-            'thr': thr
+            'thr': thr,
+            'rel_chi': rel_chi,
+            'rel_dist': rel_dist
         }
 
         return state
