@@ -131,7 +131,7 @@ class Fdm3DoF:
         # 计算气动力
         D, L, Y = self.calculate_aero_force(alpha, beta, mach, v, alt)
         # 计算推进力
-        T = 1.5 * self.calculate_prop_force(mach, alt, thr)
+        T = 1 * self.calculate_prop_force(mach, alt, thr)
 
         # 计算方向余弦矩阵
         L_ka, L_gk, L_kb, L_kg = self.calculate_dcm(gamma, chi, alpha, beta, mu)

@@ -117,10 +117,10 @@ class PursuitEvasionGame(gym.Env):
             'x_t': 3000.0,
             'y_t': 0.0, 
             'z_t': -5000.0,   # 目标高度 5000 米
-            'v': 165.0,        # 初始速度
+            'v': 140.0,        # 初始速度
             'alpha': np.deg2rad(3.0),   # 初始攻角 3°
             'beta': np.deg2rad(0.0),    # 初始侧滑角 0°
-            'gamma': np.deg2rad(3.0),   # 初始航迹倾角 0°
+            'gamma': np.deg2rad(10.0),   # 初始航迹倾角 0°
             'chi': np.deg2rad(0.0),    # 初始航向 0°
             'chi_t': np.deg2rad(0.0),      # 目标航向 0°
             'mu': np.deg2rad(0.0),    # 初始绕速度滚转角 0°
@@ -211,17 +211,22 @@ class PursuitEvasionGame(gym.Env):
 class StableFlyingEnv(PursuitEvasionGame):
     def __init__(self, render_mode=None):
         super(StableFlyingEnv, self).__init__(render_mode)
-        # 调整权重系数
+        # 部分参数
         self.alpha_range = (2.0, 4.0)  # 目标迎角范围
-        self.target_speed = 170.0      # 目标巡航速度
+        self.target_speed = 160.0      # 目标巡航速度
+        self.target_alt = 1250         # 目标高度
+        self.alt_tolerance = 50        # 高度偏差范围
+        self.R_alt = 10                # 高度保持最大奖励
+        # 调整权重系数
         self.w = {
-            'alpha': 2.0,   # 迎角核心指标
+            'alpha': 3.0,   # 迎角核心指标
             'beta': 1.5,     # 侧滑角零值保持
             'gamma': 5.0,    # 航迹倾角零值保持
-            'speed': 3,    # 速度保持
+            'speed': 0,    # 速度保持
             'offset': 0.8,   # 侧偏距抑制
-            'action': 0.1,  # 动作平滑
-            'thr':   0.5     # 油门限幅
+            'action': 0.15,  # 动作平滑
+            'thr':   0.5,    # 油门限幅
+            'alt':8.0        # 高度保持占主要部分
         }
 
     def get_reward(self, state, action):
@@ -250,7 +255,7 @@ class StableFlyingEnv(PursuitEvasionGame):
             speed_reward = np.exp(-0.01*speed_error)
         
         # 5. 侧向偏移抑制（指数衰减）
-        lateral_offset = abs(state['y'] * math.sin(state['chi']))
+        lateral_offset = abs(state['y'] * math.sin(state['chi'])) * math.cos(state['gamma'])
         offset_reward = np.exp(-0.0001*lateral_offset)
         
         # 6. 动作平滑惩罚（变化率抑制）
@@ -269,6 +274,15 @@ class StableFlyingEnv(PursuitEvasionGame):
             thr_reward = -2.0 + (thr - 0.4) * 5
         else:
             thr_reward = -abs(thr - 0.7)
+        # 8. 高度奖励(分段函数)
+        alt = -state['z']
+        e_alt = abs(alt - self.target_alt)
+        if e_alt < self.alt_tolerance:
+            alt_reward = self.R_alt / (e_alt**2 + 1)
+        else:
+            alt_reward = -2*self.alt_tolerance*self.R_alt*(e_alt-self.alt_tolerance)/(self.alt_tolerance**2+1)**2
+            + self.R_alt/(self.alt_tolerance**2+1)
+
         
         # 综合奖励计算
         reward = (
@@ -279,14 +293,15 @@ class StableFlyingEnv(PursuitEvasionGame):
             + self.w['offset'] * offset_reward
             - self.w['action'] * (np.mean(action**2) + 0.5*action_change)
             + self.w['thr'] * thr_reward
+            + self.w['alt'] * alt_reward
         )
         
         # 边界条件惩罚（硬约束）
-        if state['z'] > -1000:  # 高度低于1000米
+        if state['z'] > -500 or state['z'] < -1500:  # 高度变化500m
             reward -= 10.0
         if abs(beta_deg) > 6.0:  # 侧滑角超过±6°
             reward -= 3.0
-        if abs(gamma_deg) > 25.0:   # 航迹倾角超过±25°
+        if abs(gamma_deg) > 15.0:   # 航迹倾角超过±25°
             reward -= 3.0
 
         return reward
