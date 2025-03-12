@@ -67,16 +67,16 @@ def scale(action):
     action = np.array(action, dtype=float)
     """
     对输入的动作进行缩放。
-    :param action: 输入动作（包含 alpha, beta, thr）
+    :param action: 输入动作（包含 alpha, mu, thr）
     :return: 缩放后的动作
     """
     delta_alpha = action[0] * np.deg2rad(15)
-    delta_beta = action[1] * np.deg2rad(6)
+    delta_mu = action[1] * np.deg2rad(15)
     # delta_thr = clamp(action[2],0, 1.03)
-    delta_thr = action[2]
+    delta_thr = 0.3 * action[2]
 
 
-    return delta_alpha, delta_beta, delta_thr
+    return delta_alpha, delta_mu, delta_thr
 
 # 绘图
 def plot_rslt(alpha_log,
@@ -116,3 +116,10 @@ def plot_rslt(alpha_log,
 
     plt.tight_layout()
     plt.show()
+
+# 线性衰减学习率
+def linear_decay(init_lr, final_lr, totla_steps):
+    def schedule(progress_remaining: float):
+        decay = init_lr - (init_lr - final_lr) * (1 - progress_remaining)
+        return decay
+    return schedule

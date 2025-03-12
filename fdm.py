@@ -37,7 +37,7 @@ class Fdm3DoF:
             grid_axes_prop=self.grid_axes_prop
         )
         # 逃逸者运动规律
-        self.evader_velocity = np.array([80, 0, 0], dtype=np.float32)
+        self.evader_velocity = np.array([0, 0, 0], dtype=np.float32)
         self.chi_t_dot = 0
 
     def calculate_mach(self, v, alt):
@@ -113,15 +113,15 @@ class Fdm3DoF:
         alt = -z  # 假设 z 是向下为正
 
         # 提取动作
-        delta_alpha, delta_beta, delta_thr = scale(action)  # 缩放动作
+        delta_alpha, delta_mu, delta_thr = scale(action)  # 缩放动作
 
         # 更新控制输入
         alpha += math.radians(delta_alpha) * self.dt_AP
-        beta += math.radians(delta_beta) * self.dt_AP
+        mu += math.radians(delta_mu) * self.dt_AP
         thr += delta_thr * self.dt_AP
 
         alpha = np.clip(alpha, math.radians(-3), math.radians(12))
-        beta = np.clip(beta, math.radians(-6), math.radians(6))
+        mu = np.clip(mu, math.radians(-30), math.radians(30))
         thr = np.clip(thr, 0, 1.03)
 
 
@@ -182,7 +182,7 @@ class Fdm3DoF:
         dy = y_t - y
         dz = z_t - z
 
-        rel_chi = math.atan2(dy, dx) - chi
+        rel_chi = self.check_chi(math.atan2(dy, dx) - chi)
         xy_dist = math.hypot(dx, dy)
         rel_dist = math.hypot(xy_dist, dz)
 

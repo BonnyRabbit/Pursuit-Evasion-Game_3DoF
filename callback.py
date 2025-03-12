@@ -25,7 +25,7 @@ class TensorboardTimeSeriesCallback(BaseCallback):
         self.episode_buffers: Dict[int, dict] = {}
         self.episode_counter = 0
         
-        self.action_names = ['dalpha', 'dbeta', 'dthr']
+        self.action_names = ['dalpha', 'dmu', 'dthr']
         self.obs_names = [
             'x', 'y', 'z', 'x_t', 'y_t', 'z_t', 'v',
             'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'thr',
@@ -37,10 +37,14 @@ class TensorboardTimeSeriesCallback(BaseCallback):
         self.writer = SummaryWriter(log_dir=self.log_dir)
         
     def _convert_value(self, name: str, value: float) -> float:
-        if name in ['dalpha', 'dbeta', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'rel_chi']:
+        if name in ['dalpha', 'dmu', 'alpha', 'beta', 'gamma', 'chi', 'chi_t', 'mu', 'rel_chi']:
             return np.rad2deg(value)
         elif name in ['z', 'z_t']:
-            return -value
+            return -value*(340**2)/9.8
+        elif name in ['x', 'y', 'x_t', 'y_t', 'rel_dist']:
+            return value*(340**2)/9.8
+        elif name in ['v']:
+            return value*340
         return value
     
     def _on_step(self) -> bool:

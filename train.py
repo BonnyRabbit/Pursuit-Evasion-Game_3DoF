@@ -10,9 +10,10 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from fdmEnv import PursuitEvasionGame, StableFlyingEnv, TargetTrackingEnv
 from callback import TensorboardTimeSeriesCallback
+from utils import linear_decay
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-stage = 1 # 训练阶段
+stage = 2 # 训练阶段
 
 def make_env(stage, render_mode='human', rank=0, seed=0):
     """
@@ -32,16 +33,18 @@ def make_env(stage, render_mode='human', rank=0, seed=0):
 def main():
     # 记录开始时间
     start_time = time.time()
+
     # 创建日志目录
     log_dir = f"logs/stage{stage}/" # 按阶段区分日志目录
-    
     os.makedirs(log_dir, exist_ok=True)
 
     # 预训练模型路径
-    pretrained_path = os.path.join(log_dir, 'best_model/best_model.zip')
+    pretrained_path = os.path.join(f"logs/stage{stage}/", 'best_model/best_model.zip')
 
-    # 设置并行环境
+    # 设置训练参数
     n_envs = 4
+    batch_size = 4096
+    n_steps = batch_size // n_envs
 
     # 创建评估环境
     eval_env = SubprocVecEnv([make_env(stage=stage, render_mode=None,
@@ -55,11 +58,12 @@ def main():
         model = PPO.load(
             pretrained_path,
             env=train_env,
+            verbose=0,
             device=device,
             tensorboard_log=log_dir,
-            learning_rate=2e-5,
-            n_steps=2048 // n_envs,
-            batch_size=64,
+            learning_rate=linear_decay(3e-4, 1e-5, 5_000_000),
+            n_steps=n_steps,
+            batch_size=batch_size,
             n_epochs=10,
             gamma=0.99,
             gae_lambda=0.95,
@@ -69,8 +73,8 @@ def main():
             max_grad_norm=0.5,
             policy_kwargs=dict(
                 net_arch=dict(
-                    pi=[256, 512, 128],
-                    vf=[256, 512, 128]
+                    pi=[512, 256],
+                    vf=[512, 256]
                 )
             )
         )
@@ -85,20 +89,20 @@ def main():
             device=device,            # 训练设备
             verbose=1,                # 显示详细信息的级别
             tensorboard_log=log_dir,  # TensorBoard 日志目录
-            learning_rate=2e-5,       # 学习率
-            n_steps=2048 // n_envs,   # 每次更新前在每个环境中运行的步数
-            batch_size=64 * n_envs,   # 小批量大小
+            learning_rate=linear_decay(3e-4, 1e-5, 5_000_000),       # 学习率
+            n_steps=n_steps,          # 每次更新前在每个环境中运行的步数
+            batch_size=batch_size,    # 小批量大小
             n_epochs=10,              # 优化代理损失时的迭代次数
             gamma=0.99,               # 折扣因子
             gae_lambda=0.95,          # GAE lambda 参数
             clip_range=0.25,          # PPO 剪切参数
-            ent_coef=0.0,             # 熵系数
+            ent_coef=0.001,             # 熵系数
             vf_coef=0.5,              # 值函数系数
             max_grad_norm=0.5,        # 梯度最大范数
             policy_kwargs=dict(
                 net_arch=dict(
-                    pi=[256, 512, 128],
-                    vf=[256, 512, 128]
+                    pi=[512, 256],
+                    vf=[512, 256]
                     )
                 )  # pi、vf 网络结构
         )
@@ -108,7 +112,7 @@ def main():
         CheckpointCallback(
             save_freq=20000 // n_envs,           # 每 20,000 步保存一次模型
             save_path=log_dir,                   # 模型保存目录
-            name_prefix='PEG_stage{stage}'    # 模型名称前缀
+            name_prefix='PEG'    # 模型名称前缀
         ),
         EvalCallback(
             eval_env,
@@ -121,21 +125,21 @@ def main():
         TensorboardTimeSeriesCallback(log_dir=log_dir)
     ]
 
-    # 训练模型(增量训练)
-    additional_timesteps = 50_000_000
-    total_timesteps = model.num_timesteps + additional_timesteps
-    try:
-        model.learn(
-            total_timesteps=total_timesteps,
-            callback=callbacks,
-            tb_log_name="PEG_stage{stage}",
-            reset_num_timesteps=False
-        )
-    except KeyboardInterrupt:
-        print("Training interrupted by YKJ.")
-    finally:
-        model.save(os.path.join(log_dir, f"PEG_stage{stage}_final"))
-        print("Model saved before exit.")
+    # 训练模型
+    total_timesteps = 4_500_000
+
+    # try:
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=callbacks,
+        tb_log_name="PEG",
+        reset_num_timesteps=False
+    )
+    # except KeyboardInterrupt:
+        # print("Training interrupted by YKJ.")
+    # finally:
+    model.save(os.path.join(log_dir, "PEG_final"))
+    print("Model saved before exit.")
 
     # 记录结束时间
     end_time = time.time()
